@@ -1,0 +1,124 @@
+name: CI Workflow
+
+on:
+  push:
+    branches:
+      - 'feature/**'
+  pull_request:
+    branches:
+      - 'main'
+  workflow_dispatch: # allow manual runs from the Actions tab
+
+# Read-only token; this workflow only checks out code and uploads artifacts.
+permissions:
+  contents: read
+
+# Cancel an in-progress run when a newer commit is pushed to the same branch/PR.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci_job:
+    name: Unit tests (local PySpark)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      # PySpark 4.1 needs Java 17+ (Databricks Runtime 18 itself runs JDK 21).
+      - name: Set up Java 17
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      # Python 3.12 matches Databricks Runtime 18 LTS and requirements-pyspark.txt.
+      # Creates and activates .venv_pyspark (without installing the project) and caches downloads.
+      - name: Set up uv + Python 3.12
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: '0.12.18'
+          python-version: '3.12'
+          activate-environment: true
+          venv-path: .venv_pyspark
+          no-project: true
+          cache-dependency-glob: requirements-pyspark.txt
+
+      # --no-config: ignore the databricks-connect constraints in pyproject.toml (they conflict with pyspark).
+      - name: Install dependencies
+        run: uv pip install --no-config -r requirements-pyspark.txt
+
+      # Coverage settings (source, omit) come from [tool.coverage.*] in pyproject.toml.
+      # dab_project is imported from src/ via pythonpath in [tool.pytest.ini_options].
+      - name: Run pytest with coverage
+        run: |
+          pytest \
+            --disable-warnings \
+            --cov \
+            --cov-report=term-missing \
+            --cov-report=html \
+            --junitxml=pytest-results.xml
+
+      - name: Upload coverage HTML report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-html
+          path: htmlcov
+          retention-days: 14
+
+      - name: Upload test results
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-results
+          path: pytest-results.xml
+          retention-days: 14
+
+  dbt_checks:
+    name: dbt checks (parse + format)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: dbt
+    env:
+      # dbt parse renders the profile but never connects, so placeholders are enough (no secrets needed).
+      DBT_HOST: placeholder.azuredatabricks.net
+      DBT_ACCESS_TOKEN: placeholder
+      DBT_SEND_ANONYMOUS_USAGE_STATS: 'false'
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up uv + Python 3.12
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: '0.12.18'
+          python-version: '3.12'
+          activate-environment: true
+          venv-path: .venv_dbt
+          no-project: true
+          cache-dependency-glob: requirements-dbt.txt
+
+      - name: Install dbt
+        working-directory: .
+        run: uv pip install --no-config -r requirements-dbt.txt
+
+      - name: Check SQL formatting (sqlfmt)
+        working-directory: .
+        run: sqlfmt --check --diff dbt
+
+      - name: Install dbt packages
+        run: dbt deps --profiles-dir dbt_profiles
+
+      # Validates Jinja, refs/sources, YAML (tests, unit tests, contracts) for every target.
+      - name: Parse dbt project (dev, test, prod)
+        run: |
+          for target in dev test prod; do
+            dbt parse --profiles-dir dbt_profiles --target "$target"
+          done

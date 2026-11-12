@@ -1,0 +1,30 @@
+version: 2
+
+sources:
+  - name: silver
+    description: >
+      Silver layer produced by the PySpark notebook task `02_silver_citibike`
+      (cleaned and enriched Citi Bike trips).
+    database: "{{ target.catalog }}"
+    schema: "02_silver"
+    tables:
+      - name: jc_citibike
+        description: '{{ doc("silver_jc_citibike") }}'
+        columns:
+          - name: ride_id
+            description: Unique ride identifier.
+            data_tests:
+              - not_null
+              - unique:
+                  config:
+                    severity: warn
+          - name: trip_start_date
+            description: Date the ride started.
+            data_tests:
+              - not_null
+          - name: trip_duration_mins
+            description: Ride duration in minutes (ended_at - started_at).
+            data_tests:
+              - assert_non_negative:
+                  config:
+                    severity: warn

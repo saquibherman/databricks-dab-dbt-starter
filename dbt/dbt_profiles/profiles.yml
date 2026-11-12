@@ -1,0 +1,35 @@
+# One target per bundle target. The job runs `dbt ... --target=${bundle.target} --vars {warehouse_id: ...}`.
+#
+# warehouse_id: passed by the job (looked up by warehouse name in databricks.yml); locally set DBT_WAREHOUSE_ID.
+# DBT_HOST and DBT_ACCESS_TOKEN are set automatically by Databricks when dbt runs as a job task
+# (as the job's run_as identity). For local runs, export them yourself (see README "Running dbt locally").
+citibike_dbt:
+  target: dev
+  outputs:
+    dev:
+      type: databricks
+      method: http
+      host: "{{ env_var('DBT_HOST') }}"
+      token: "{{ env_var('DBT_ACCESS_TOKEN') }}"
+      http_path: "/sql/1.0/warehouses/{{ var('warehouse_id', env_var('DBT_WAREHOUSE_ID', '')) }}"
+      catalog: citibike_dev
+      schema: default
+      threads: 4
+    test:
+      type: databricks
+      method: http
+      host: "{{ env_var('DBT_HOST') }}"
+      token: "{{ env_var('DBT_ACCESS_TOKEN') }}"
+      http_path: "/sql/1.0/warehouses/{{ var('warehouse_id', env_var('DBT_WAREHOUSE_ID', '')) }}"
+      catalog: citibike_test
+      schema: default
+      threads: 4
+    prod:
+      type: databricks
+      method: http
+      host: "{{ env_var('DBT_HOST') }}"
+      token: "{{ env_var('DBT_ACCESS_TOKEN') }}"
+      http_path: "/sql/1.0/warehouses/{{ var('warehouse_id', env_var('DBT_WAREHOUSE_ID', '')) }}"
+      catalog: citibike_prod
+      schema: default
+      threads: 4

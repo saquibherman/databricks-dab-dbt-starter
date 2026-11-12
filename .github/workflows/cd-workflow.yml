@@ -1,0 +1,98 @@
+name: CD Workflow
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: # allow manual (re)deploys from the Actions tab
+
+# Read-only token; deployment credentials come from the GitHub environments.
+permissions:
+  contents: read
+
+# Never run two deployments at once, and never cancel one that is in progress.
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DATABRICKS_CLI_VERSION: '1.26.0'
+  UV_VERSION: '0.12.18'
+  PYTHON_VERSION: '3.12' # matches Databricks Runtime 18 LTS
+
+jobs:
+  cd-deploy-test:
+    name: Deploy to TEST
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # environment secrets: AZURE_TENANT_ID, AZURE_CLIENT_ID, AZURE_CLIENT_SECRET; variable: DATABRICKS_HOST
+    environment: test
+    env:
+      # Service principal auth via environment variables;
+      # no ~/.databrickscfg is written.
+      DATABRICKS_AUTH_TYPE: azure-client-secret
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      # Workspace URL (environment variable, not secret) and the service principal's application ID
+      # (same as AZURE_CLIENT_ID) for run_as/permissions in databricks.yml.
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      BUNDLE_VAR_service_principal_id: ${{ secrets.AZURE_CLIENT_ID }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@v1.26.0
+        with:
+          version: ${{ env.DATABRICKS_CLI_VERSION }}
+
+      # The bundle builds the dab_project wheel with `uv build --wheel` (artifacts in databricks.yml).
+      - name: Set up uv + Python
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate bundle
+        run: databricks bundle validate --target test
+
+      - name: Deploy to TEST
+        run: databricks bundle deploy --target test
+
+  cd-deploy-prod:
+    name: Deploy to PROD
+    needs: cd-deploy-test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: prod # add "Required reviewers" on this environment to gate prod deploys
+    env:
+      # Service principal auth (prod)
+      DATABRICKS_AUTH_TYPE: azure-client-secret
+      ARM_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      ARM_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      # Workspace URL (environment variable, not secret) and the service principal's application ID
+      # (same as AZURE_CLIENT_ID) for run_as/permissions in databricks.yml.
+      DATABRICKS_HOST: ${{ vars.DATABRICKS_HOST }}
+      BUNDLE_VAR_service_principal_id: ${{ secrets.AZURE_CLIENT_ID }}
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Install Databricks CLI
+        uses: databricks/setup-cli@v1.26.0
+        with:
+          version: ${{ env.DATABRICKS_CLI_VERSION }}
+
+      - name: Set up uv + Python
+        uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: ${{ env.UV_VERSION }}
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Validate bundle
+        run: databricks bundle validate --target prod
+
+      - name: Deploy to PROD
+        run: databricks bundle deploy --target prod

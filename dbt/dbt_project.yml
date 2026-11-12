@@ -1,0 +1,28 @@
+name: "citibike_dbt"
+version: "1.0.0"
+config-version: 2
+
+# Profile is defined in dbt_profiles/profiles.yml (one target per bundle target: dev / test / prod).
+profile: "citibike_dbt"
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Silver is produced by the PySpark notebooks (job task 02_silver_citibike) in <catalog>.02_silver;
+# dbt owns the gold layer in <catalog>.03_gold. The catalog comes from the profile target.
+models:
+  citibike_dbt:
+    gold:
+      +schema: "03_gold"
+      +materialized: table
+      +file_format: delta
+      +tags: ["gold"]

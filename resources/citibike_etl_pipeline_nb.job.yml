@@ -1,0 +1,69 @@
+resources:
+  jobs:
+    citibike_etl_pipeline_nb:
+      name: citibike_etl_pipeline_dbt
+      # Tasks without job_cluster_key run on serverless (currently all tasks).
+      # To use classic compute, set `job_cluster_key: <key>` on a task (clusters defined under job_clusters).
+      performance_target: STANDARD
+      tasks:
+        - task_key: 01_bronze_citibike
+          notebook_task:
+            notebook_path: ../citibike_etl/notebooks/01_bronze/01_bronze_citibike.ipynb
+            base_parameters:
+              pipeline_id: "{{job.id}}"
+              run_id: "{{job.run_id}}"
+              task_id: "{{task.run_id}}"
+              processed_timestamp: "{{job.start_time.iso_datetime}}"
+              catalog: "${var.catalog}"
+            source: WORKSPACE
+          environment_key: dab_project_env
+        - task_key: 02_silver_citibike
+          depends_on:
+            - task_key: 01_bronze_citibike
+          notebook_task:
+            notebook_path: ../citibike_etl/notebooks/02_silver/02_silver_citibike.ipynb
+            base_parameters:
+              pipeline_id: "{{job.id}}"
+              run_id: "{{job.run_id}}"
+              task_id: "{{task.run_id}}"
+              processed_timestamp: "{{job.start_time.iso_datetime}}"
+              catalog: "${var.catalog}"
+            source: WORKSPACE
+          environment_key: dab_project_env
+        # Gold layer is built by dbt (dbt/): models, data tests and unit tests via `dbt build`.
+        # Runs on serverless compute (dbt_env) against the SQL warehouse in dbt/dbt_profiles/profiles.yml;
+        # Databricks sets DBT_HOST / DBT_ACCESS_TOKEN for the job's run_as identity.
+        - task_key: 03_gold_dbt
+          depends_on:
+            - task_key: 02_silver_citibike
+          environment_key: dbt_env
+          dbt_task:
+            project_directory: ../dbt
+            profiles_directory: dbt_profiles
+            commands:
+              - "dbt deps --target=${bundle.target} --vars '{warehouse_id: ${var.warehouse_id}}'"
+              - "dbt build --target=${bundle.target} --vars '{warehouse_id: ${var.warehouse_id}}'"
+      # Serverless tasks get libraries from an environment (task-level `libraries` is not
+      # supported on serverless). The wheel is built from src/ by the `artifacts` block in databricks.yml.
+      environments:
+        - environment_key: dab_project_env
+          spec:
+            environment_version: "4"
+            dependencies:
+              - ../dist/*.whl
+        # dbt runs in its own serverless environment; keep the version in sync with requirements-dbt.txt.
+        - environment_key: dbt_env
+          spec:
+            environment_version: "5"
+            dependencies:
+              - dbt-databricks==1.13.0
+              - dbt-core==1.12.6
+      job_clusters:
+        # Defined but not used by any task yet; set `job_cluster_key: single_node_small` on a task to use it.
+        - job_cluster_key: single_node_small
+          new_cluster: "${var.single_node_small}"
+        # Defined but not used by any task yet; set `job_cluster_key: d4ds_v5` on a task to use it.
+        - job_cluster_key: d4ds_v5
+          new_cluster: "${var.d4ds_v5}"
+      queue:
+        enabled: true

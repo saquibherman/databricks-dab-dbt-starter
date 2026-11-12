@@ -1,0 +1,26 @@
+# --- Dotfiles / local tooling (IDE, AI agents, caches, bundle state) ---
+.*
+!.gitignore
+!.gitkeep
+# Keep GitHub Actions workflows (CI/CD), ignore everything else under .github
+!.github/
+.github/*
+!.github/workflows/
+
+# --- Python / build artifacts ---
+build/
+dist/
+__pycache__/
+*.egg-info
+*.bak
+
+# --- Scratch / explorations ---
+scratch/**
+!scratch/README.md
+**/explorations/**
+!**/explorations/README.md
+
+# --- dbt (dbt/) ---
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/

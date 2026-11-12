@@ -1,0 +1,86 @@
+version: 2
+
+models:
+  - name: gold_daily_ride_summary
+    description: '{{ doc("gold_daily_ride_summary") }}'
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: trip_start_date
+        data_type: date
+        constraints:
+          - type: not_null
+        data_tests:
+          - unique
+          - not_null
+      - name: max_trip_duration_mins
+        data_type: double
+      - name: min_trip_duration_mins
+        data_type: double
+      - name: avg_trip_duration_mins
+        data_type: double
+      - name: total_trips
+        data_type: bigint
+        data_tests:
+          - not_null
+          - assert_non_negative
+
+  - name: gold_daily_station_performance
+    description: '{{ doc("gold_daily_station_performance") }}'
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns:
+              - trip_start_date
+              - start_station_name
+    columns:
+      - name: trip_start_date
+        data_type: date
+        data_tests:
+          - not_null
+      - name: start_station_name
+        data_type: string
+      - name: avg_trip_duration_mins
+        data_type: double
+      - name: total_trips
+        data_type: bigint
+        data_tests:
+          - not_null
+          - assert_non_negative
+
+unit_tests:
+  - name: test_daily_ride_summary_aggregates_per_day
+    model: gold_daily_ride_summary
+    given:
+      - input: source("silver", "jc_citibike")
+        format: csv
+        rows: |
+          ride_id,trip_start_date,trip_duration_mins
+          r1,2025-03-01,10.0
+          r2,2025-03-01,20.0
+          r3,2025-03-01,3.333
+          r4,2025-03-02,5.0
+    expect:
+      format: csv
+      rows: |
+        trip_start_date,max_trip_duration_mins,min_trip_duration_mins,avg_trip_duration_mins,total_trips
+        2025-03-01,20.0,3.33,11.11,3
+        2025-03-02,5.0,5.0,5.0,1
+
+  - name: test_daily_station_performance_groups_by_station
+    model: gold_daily_station_performance
+    given:
+      - input: source("silver", "jc_citibike")
+        format: csv
+        rows: |
+          ride_id,trip_start_date,start_station_name,trip_duration_mins
+          r1,2025-03-01,Hamilton Park,10.0
+          r2,2025-03-01,Hamilton Park,20.0
+          r3,2025-03-01,Grove St PATH,4.0
+    expect:
+      format: csv
+      rows: |
+        trip_start_date,start_station_name,avg_trip_duration_mins,total_trips
+        2025-03-01,Hamilton Park,15.0,2
+        2025-03-01,Grove St PATH,4.0,1

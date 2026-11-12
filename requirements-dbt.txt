@@ -1,0 +1,12 @@
+# dbt environment (.venv_dbt): runs the dbt project in dbt/ against a Databricks SQL warehouse.
+# Python 3.12 (matches Databricks Runtime 18 LTS / serverless environment v5).
+#
+# Create / update (--no-config: ignore the databricks-connect constraints in pyproject.toml):
+#   uv venv .venv_dbt --python 3.12
+#   uv pip install --no-config --python .venv_dbt/bin/python -r requirements-dbt.txt
+#
+# Keep dbt-databricks in sync with the `dbt_env` environment in resources/citibike_etl_pipeline_nb.job.yml.
+
+dbt-databricks==1.13.0
+dbt-core==1.12.6  # newest allowed by dbt-databricks 1.13.0 (<1.12.7)
+shandy-sqlfmt[jinjafmt]==0.32.0
