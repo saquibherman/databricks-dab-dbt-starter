@@ -46,9 +46,11 @@ resources:
       # Serverless tasks get libraries from an environment (task-level `libraries` is not
       # supported on serverless). The wheel is built from src/ by the `artifacts` block in databricks.yml.
       environments:
+        # All environments use the same version: mixing versions makes serverless prepare
+        # several base images per run (slower). Keep these in sync when upgrading.
         - environment_key: dab_project_env
           spec:
-            environment_version: "4"
+            environment_version: "5"
             dependencies:
               - ../dist/*.whl
         # dbt runs in its own serverless environment; keep the version in sync with requirements-dbt.txt.
